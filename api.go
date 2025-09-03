@@ -1,38 +1,68 @@
 package main
 
 import (
+	"context"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/openai/openai-go/v2"
+	"github.com/openai/openai-go/v2/option"
 )
 
 func callAPI(userinput []string) {
-	go buildMsgHist()                                                                       // Concurrently run buildMsgHist
-	MsgTurn <- []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(userinput[0])} // Send first command line arg to unblock buildMsgHist
+	// Send userinput to MsgTurn channel
+	// Block here ApiTurn recieves anything back
+	// Requst recieved
+	// Process it
+	// Send assistant response to MsgTurn channel
 
-	for { // Start channel, loop forever
-		<-ApiTurn // Block API Call until request body with message history is formed
+	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(userinput))
+	for _, s := range userinput {
+		messages = append(messages, openai.SystemMessage(s))
+	}
+	MsgTurn <- messages
+	req := <-ApiTurn
 
+	err := godotenv.Load()
+	if err != nil {
+	}
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	client := openai.NewClient(
+		option.WithAPIKey(apiKey),
+	)
+	ctx := context.Background()
+
+	params := openai.ChatCompletionNewParams{
+		Messages: req.Messages,
+		Seed:     req.Seed,
+		Model:    req.Model,
+	}
+	resp, err := client.Chat.Completions.New(ctx, params)
+	if err != nil {
 	}
 }
 
 func buildMsgHist() {
-	sysIns := loadSysIns() // Load sysIns the first time, and let channel run
+	// Intialize a request body
+	sysIns := loadSysIns()
 
-	// Build req the first time, reusable as long as channel is open
 	var req = Request{
 		Seed:     openai.Int(0),
 		Model:    openai.ChatModelGPT4o,
 		Messages: []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(sysIns)}, // Add sysins as first, to message history
 	}
 
-	for { //Start channel, loop forever
-		// Block execution here until MsgTurn channel recieves either userinput or assistant history
-		hist := <-MsgTurn                            //  hist refers to both userinput and assistant history
-		req.Messages = append(req.Messages, hist...) // Append to chat history
-		ApiTurn <- req                               //Send request body to ApiTurn channel to unblock callAPI
-	}
+	// Loop this part forever
+	//		Block here until MsgTurn recieves either userinput, or assistant response
+	// 		Process the userinput/assistant response
+	// 		Send request with complete history ApiTurn channel
+	// 		(This loops, but the next line will block until a new userinput or an assistant response is recieved)
 
+	for {
+		hist := <-MsgTurn
+		req.Messages = append(req.Messages, hist...)
+		ApiTurn <- req
+	}
 }
 
 func loadSysIns() string {

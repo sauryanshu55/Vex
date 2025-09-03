@@ -6,7 +6,7 @@ import (
 )
 
 func processInput(userinput string) {
-	go callAPI([]string{userinput})
+	callAPI([]string{userinput})
 }
 
 func main() {
@@ -15,6 +15,8 @@ func main() {
 		os.Exit(1)
 	}
 	userinput := os.Args[1]
+
+	go buildMsgHist()
 
 	processInput(userinput)
 
