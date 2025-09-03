@@ -2,3 +2,4 @@
 .vscode/
 openai_example.go
 vex.exe
+bin/

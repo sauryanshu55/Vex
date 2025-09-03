@@ -9,21 +9,19 @@ import (
 	"github.com/openai/openai-go/v2/option"
 )
 
-func callAPI(userinput []string) Response {
+func callAPI(args []string) Response {
 	// FUNC OVERVIEW:
-	// Send userinput to MsgTurn channel
+	// Send args to MsgTurn channel
 	// Block here until ApiTurn recieves anything back
 	// Requst recieved
 	// Process it
 	// Send assistant response to MsgTurn channel
-
-	msgs := make([]openai.ChatCompletionMessageParamUnion, 0, len(userinput)) // Make a list of openai user msg type
-	for _, s := range userinput {
+	msgs := make([]openai.ChatCompletionMessageParamUnion, 0, len(args)) // Make a list of openai user msg type
+	for _, s := range args {
 		msgs = append(msgs, openai.SystemMessage(s)) // Convert and populate array of openai msg type
 	}
 	MsgTurn <- msgs  // Send to MsgTurn channel
 	req := <-ApiTurn // Block execution here until proper req is returned
-
 	// Set up API Client
 	err := godotenv.Load()
 	if err != nil {
