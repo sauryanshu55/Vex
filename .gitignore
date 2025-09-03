@@ -1,2 +1,3 @@
 *.env
+.vscode/
 openai_example.go

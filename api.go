@@ -9,20 +9,22 @@ import (
 	"github.com/openai/openai-go/v2/option"
 )
 
-func callAPI(userinput []string) {
+func callAPI(userinput []string) Response {
+	// FUNC OVERVIEW:
 	// Send userinput to MsgTurn channel
-	// Block here ApiTurn recieves anything back
+	// Block here until ApiTurn recieves anything back
 	// Requst recieved
 	// Process it
 	// Send assistant response to MsgTurn channel
 
-	messages := make([]openai.ChatCompletionMessageParamUnion, 0, len(userinput))
+	msgs := make([]openai.ChatCompletionMessageParamUnion, 0, len(userinput)) // Make a list of openai user msg type
 	for _, s := range userinput {
-		messages = append(messages, openai.SystemMessage(s))
+		msgs = append(msgs, openai.SystemMessage(s)) // Convert and populate array of openai msg type
 	}
-	MsgTurn <- messages
-	req := <-ApiTurn
+	MsgTurn <- msgs  // Send to MsgTurn channel
+	req := <-ApiTurn // Block execution here until proper req is returned
 
+	// Set up API Client
 	err := godotenv.Load()
 	if err != nil {
 	}
@@ -36,20 +38,33 @@ func callAPI(userinput []string) {
 		Messages: req.Messages,
 		Seed:     req.Seed,
 		Model:    req.Model,
-	}
-	resp, err := client.Chat.Completions.New(ctx, params)
+	} // Set up API params
+	rawResp, err := client.Chat.Completions.New(ctx, params) // Get raw response
 	if err != nil {
 	}
+	resp := parseResp(rawResp.Choices[0].Message.Content) // Parse it
+
+	var asstMsgs []openai.ChatCompletionMessageParamUnion // Make a list of openai asst msg type
+	if resp.NeedExplanation {
+		asstMsgs = append(asstMsgs, openai.AssistantMessage(resp.Question)) // populate as msg history
+	}
+	if resp.NeedPrereqs {
+		asstMsgs = append(asstMsgs, openai.AssistantMessage(resp.Prereqs))
+	}
+
+	MsgTurn <- asstMsgs // Send to MsgTurn so msg history can be built
+
+	return resp
 }
 
 func buildMsgHist() {
-	// Intialize a request body
-	sysIns := loadSysIns()
+	sysIns := loadSysIns() // Load sys ins from file
 
+	// Intialize a req body. Keep channel open concurrently so that a new req body doesn't need to be created everytime
 	var req = Request{
 		Seed:     openai.Int(0),
 		Model:    openai.ChatModelGPT4o,
-		Messages: []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(sysIns)}, // Add sysins as first, to message history
+		Messages: []openai.ChatCompletionMessageParamUnion{openai.SystemMessage(sysIns)}, // Add sysins as a first, to message history
 	}
 
 	// Loop this part forever
@@ -58,17 +73,9 @@ func buildMsgHist() {
 	// 		Send request with complete history ApiTurn channel
 	// 		(This loops, but the next line will block until a new userinput or an assistant response is recieved)
 
-	for {
-		hist := <-MsgTurn
-		req.Messages = append(req.Messages, hist...)
-		ApiTurn <- req
+	for { // Loop indefinitely
+		hist := <-MsgTurn                            // Listen for any asst msg or user msg
+		req.Messages = append(req.Messages, hist...) // Append it to req body to build complete history
+		ApiTurn <- req                               // Send it to channel so req is ready to be used
 	}
-}
-
-func loadSysIns() string {
-	ins, err := os.ReadFile("SYS_INS.txt")
-	if err != nil {
-		return ""
-	}
-	return string(ins)
 }
